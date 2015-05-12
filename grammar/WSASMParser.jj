@@ -1,0 +1,157 @@
+/* ************************************************************** *
+ *                                                                *
+ * Copyright (c) 2005, Kota Mizushima, All rights reserved.       *
+ *                                                                *
+ *                                                                *
+ * This software is distributed under the modified BSD License.   *
+ * ************************************************************** */
+
+options{
+  STATIC = false;
+}
+
+PARSER_BEGIN(WSASMParser)
+package jp.gr.java_conf.mizu.es.ws.parser;
+import java.math.*;
+import java.util.*;
+import jp.gr.java_conf.mizu.es.ws.*;
+
+public class WSASMParser implements WSInstructionConstants {
+  /* âΩâÒÇ‡2Çê∂ê¨ÇµÇ»Ç¢ÇÊÇ§Ç…ÉLÉÉÉbÉVÉÖÇµÇƒÇ®Ç≠ */
+  private static final BigInteger TWO = new BigInteger("2");
+  private static Location loc(Token t){
+    return new Location(t.beginLine, t.beginColumn);
+  }
+  private static String $(Token t){
+  	return t.image;
+  }
+  private static Object[] op() { return new Object[0]; }
+  private static Object[] op(Object o) { return new Object[]{o}; }
+  private static WSInstruction I(int type, Object[] operands, Location location) {
+  	return new WSInstruction(type, operands, location);
+  }
+}
+PARSER_END(WSASMParser)
+
+/*
+ * COMMENTS
+ */
+SPECIAL_TOKEN:
+{
+  <COMMENT: "#" (~["\r", "\n"])*>
+}
+
+SKIP:
+{
+  "\t"
+| "\r"
+| "\n"
+| "\r\n"
+}
+
+TOKEN:
+{
+  <K_PUSH           : "push">
+| <K_COPY           : "copy">
+| <K_SWAP           : "swap">
+| <K_POP            : "pop">
+| <K_DISCARD        : "discard">
+| <K_SLIDE          : "slide">
+| <K_ADD            : "add">
+| <K_SUB            : "sub">
+| <K_MUL            : "div">
+| <K_MOD            : "mod">
+| <K_STORE          : "store">
+| <K_RETR           : "retr">
+| <K_PRINTC         : "printc">
+| <K_PRINTN         : "printn">
+| <K_READC          : "readc">
+| <K_READN          : "readn">
+| <K_CALL           : "call">
+| <K_JUMP           : "jump">
+| <K_JUMP_IF_ZERO   : "jump_if_zero">
+| <K_JUMP_IF_NEG    : "jump_if_neg">
+| <K_RETURN         : "return">
+| <K_END            : "end">
+| <K_PLUS           : "+">
+| <K_MINUS          : "-">
+| <K_COLON          : ":">
+}
+
+TOKEN:{
+  <LABEL            : ["a"-"z","A"-"Z","_"] (["a"-"z","A"-"Z","_", "0"-"9"])*>
+| <NUMBER           : ["1"-"9"](["0"-"9"])*>
+}
+
+BigInteger number():{Token t; boolean negative = false;}{
+  ("+" | "-" {negative=true;}) t=<NUMBER> {
+  	return negative ? new BigInteger($(t)).negate() : new BigInteger($(t));
+  }
+}
+
+String label():{Token t;}{
+  t=<LABEL> {return t.image;}
+}
+
+WSInstruction instruction():{WSInstruction i;}{
+( i=StackManipulation() 
+| i=Arithmetic() 
+| i=HeapAccess()
+| i=FlowControl()
+| i=IO()
+) {return i;}
+}
+
+WSInstruction stack_manipulation():{Token t; WSInstruction i; BigInteger n;}{
+( t="push"     n=number() {i = I(PUSH, op(n), loc(t));}
+| t="dup"                 {i = I(DUP, op(), loc(t));}
+| t="copy"     n=number() {i = I(COPY, op(n), loc(t));}
+| t="swap"                {i = I(SWAP, op(), loc(t));}
+| t="discard"             {i = I(DISCARD, op(), loc(t));}
+| t="slide"    n=number() {i = new WSInstruction(SLIDE, op(n), loc(t));}
+) {return i;}
+}
+
+WSInstruction Arithmetic():{ Token t; WSInstruction i; }{
+  t = <T> <S> (
+    LOOKAHEAD(2) <S> <S> { i = new WSInstruction(ADD, op(), loc(t)); }
+  | LOOKAHEAD(2) <S> <T> { i = new WSInstruction(SUB, op(), loc(t)); }
+  | LOOKAHEAD(2) <S> <L> { i = new WSInstruction(MUL, op(), loc(t)); }
+  | LOOKAHEAD(2) <T> <S> { i = new WSInstruction(DIV, op(), loc(t)); }
+  | LOOKAHEAD(2) <T> <T> { i = new WSInstruction(MOD, op(), loc(t)); }
+  ) { return i; }
+}
+
+WSInstruction HeapAccess():{ Token t; WSInstruction i; }{
+t=<T> <T> (
+  <S> {i = I(STORE, op(), loc(t));}
+| <T> {i = I(RETR, op(), loc(t));}
+) { return i; }
+}
+
+WSInstruction FlowControl():{ Token t; WSInstruction i; String s; }{
+  t=<L> 
+( LOOKAHEAD(2) <S> <S> s = label() {i = I(LABEL, op(s), loc(t));}
+| LOOKAHEAD(2) <S> <T> s = label() {i = I(CALL, op(s), loc(t));}
+| LOOKAHEAD(2) <S> <L> s = label() {i = I(JUMP, op(s), loc(t));}
+| LOOKAHEAD(2) <T> <S> s = label() {i = I(JUMP_IF_ZERO, op(s), loc(t));}
+| LOOKAHEAD(2) <T> <T> s = label() {i = I(JUMP_IF_NEG, op(s), loc(t));}
+| LOOKAHEAD(2) <T> <L>             {i = I(RETURN, op(), loc(t));}
+| LOOKAHEAD(2) <L> <L>             {i = I(END, op(), loc(t));}
+) {return i;}
+}
+
+WSInstruction IO():{ Token t; WSInstruction i; }{
+  t=<T> <L> (
+  LOOKAHEAD(2) <S> <S> {i = I(PRINT_CHAR, op(), loc(t));}
+| LOOKAHEAD(2) <S> <T> {i = I(PRINT_NUM, op(), loc(t));}
+| LOOKAHEAD(2) <T> <S> {i = I(READ_CHAR, op(), loc(t));}
+| LOOKAHEAD(2) <T> <T> {i = I(READ_NUM, op(), loc(t));}
+) {return i;}
+}
+
+Program Program():{ WSInstruction i; List is = new ArrayList(); }{
+  (i = Instruction() { is.add(i); })+ <EOF> { 
+  	return new Program((WSInstruction[])is.toArray(new WSInstruction[0]));
+  }
+}

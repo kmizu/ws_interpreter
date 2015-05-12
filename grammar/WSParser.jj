@@ -1,0 +1,137 @@
+/* ************************************************************** *
+ *                                                                *
+ * Copyright (c) 2005, Kota Mizushima, All rights reserved.       *
+ *                                                                *
+ *                                                                *
+ * This software is distributed under the modified BSD License.   *
+ * ************************************************************** */
+
+options{
+  STATIC = false;
+}
+
+PARSER_BEGIN(WSParser)
+package jp.gr.java_conf.mizu.es.ws.parser;
+import java.math.*;
+import java.util.*;
+import jp.gr.java_conf.mizu.es.ws.*;
+
+public class WSParser implements WSInstructionConstants {
+  /* âΩâÒÇ‡2Çê∂ê¨ÇµÇ»Ç¢ÇÊÇ§Ç…ÉLÉÉÉbÉVÉÖÇµÇƒÇ®Ç≠ */
+  private static final BigInteger TWO = new BigInteger("2");
+  private static Location loc(Token t){
+    return new Location(t.beginLine, t.beginColumn);
+  }
+  private static Object[] op() { return new Object[0]; }
+  private static Object[] op(Object o) { return new Object[]{o}; }
+  private static WSInstruction I(int type, Object[] operands, Location location) {
+  	return new WSInstruction(type, operands, location);
+  }
+}
+PARSER_END(WSParser)
+
+
+
+
+/*
+ * COMMENTS
+ */
+SPECIAL_TOKEN:
+{
+  <COMMENT: (~[" ", "\t", "\n"])+>
+}
+
+TOKEN:
+{
+  <S: " ">
+| <T: "\t">
+| <L: "\n">
+}
+
+BigInteger number():{ boolean positive; List bits = new ArrayList(); }{
+  (<S> { positive = true; } | <T> { positive = false; })
+  (<S> { bits.add(new Integer(0)); } | <T> { bits.add(new Integer(1)); } )* <L> {
+  	BigInteger result = new BigInteger("0");
+  	BigInteger n = new BigInteger("1");
+  	for(int i = bits.size() - 1; i >= 0; i--){
+      int bit = ((Integer)bits.get(i)).intValue();
+      if(bit == 1){
+        result = result.add(n);
+      }
+      n = n.multiply(TWO);
+  	}
+    return positive ? result : result.negate();
+  }
+}
+
+String label():{ StringBuffer buf = new StringBuffer(); }{
+  (<S> { buf.append("0"); } | <T> { buf.append("1"); } )* <L> {  	
+    return new String(buf);
+  }
+}
+
+WSInstruction Instruction():{ WSInstruction i; }{
+  ( i = StackManipulation() 
+  | LOOKAHEAD(2) i = Arithmetic() 
+  | LOOKAHEAD(2) i = HeapAccess()
+  | i = FlowControl()
+  | LOOKAHEAD(2) i = IO() 
+  ) {
+    return i;
+  }
+}
+
+WSInstruction StackManipulation():{ Token t; WSInstruction i; BigInteger n; }{
+  t = <S> (
+    <S> n = number() { i = new WSInstruction(PUSH, op(n), loc(t)); }
+  | LOOKAHEAD(2) <L> <S> { i = new WSInstruction(DUP, op(), loc(t)); }
+  | LOOKAHEAD(2) <T> <S> n = number() { i = new WSInstruction(COPY, op(n), loc(t)); }
+  | LOOKAHEAD(2) <L> <T> { i = new WSInstruction(SWAP, op(), loc(t)); }
+  | LOOKAHEAD(2) <L> <L> { i = new WSInstruction(DISCARD, op(), loc(t)); }
+  | LOOKAHEAD(2) <T> <L> n = number() { i = new WSInstruction(SLIDE, op(n), loc(t)); }
+  ) { return i; }
+}
+
+WSInstruction Arithmetic():{ Token t; WSInstruction i; }{
+  t = <T> <S> (
+    LOOKAHEAD(2) <S> <S> { i = new WSInstruction(ADD, op(), loc(t)); }
+  | LOOKAHEAD(2) <S> <T> { i = new WSInstruction(SUB, op(), loc(t)); }
+  | LOOKAHEAD(2) <S> <L> { i = new WSInstruction(MUL, op(), loc(t)); }
+  | LOOKAHEAD(2) <T> <S> { i = new WSInstruction(DIV, op(), loc(t)); }
+  | LOOKAHEAD(2) <T> <T> { i = new WSInstruction(MOD, op(), loc(t)); }
+  ) { return i; }
+}
+
+WSInstruction HeapAccess():{ Token t; WSInstruction i; }{
+t=<T> <T> (
+  <S> {i = I(STORE, op(), loc(t));}
+| <T> {i = I(RETR, op(), loc(t));}
+) { return i; }
+}
+
+WSInstruction FlowControl():{ Token t; WSInstruction i; String s; }{
+  t=<L> 
+( LOOKAHEAD(2) <S> <S> s = label() {i = I(LABEL, op(s), loc(t));}
+| LOOKAHEAD(2) <S> <T> s = label() {i = I(CALL, op(s), loc(t));}
+| LOOKAHEAD(2) <S> <L> s = label() {i = I(JUMP, op(s), loc(t));}
+| LOOKAHEAD(2) <T> <S> s = label() {i = I(JUMP_IF_ZERO, op(s), loc(t));}
+| LOOKAHEAD(2) <T> <T> s = label() {i = I(JUMP_IF_NEG, op(s), loc(t));}
+| LOOKAHEAD(2) <T> <L>             {i = I(RETURN, op(), loc(t));}
+| LOOKAHEAD(2) <L> <L>             {i = I(END, op(), loc(t));}
+) {return i;}
+}
+
+WSInstruction IO():{ Token t; WSInstruction i; }{
+  t=<T> <L> (
+  LOOKAHEAD(2) <S> <S> {i = I(PRINT_CHAR, op(), loc(t));}
+| LOOKAHEAD(2) <S> <T> {i = I(PRINT_NUM, op(), loc(t));}
+| LOOKAHEAD(2) <T> <S> {i = I(READ_CHAR, op(), loc(t));}
+| LOOKAHEAD(2) <T> <T> {i = I(READ_NUM, op(), loc(t));}
+) {return i;}
+}
+
+Program Program():{ WSInstruction i; List is = new ArrayList(); }{
+  (i = Instruction() { is.add(i); })+ <EOF> { 
+  	return new Program((WSInstruction[])is.toArray(new WSInstruction[0]));
+  }
+}

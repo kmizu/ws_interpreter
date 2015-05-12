@@ -1,0 +1,2 @@
+Class-Path: lib/bcel.jar
+Main-Class: jp.gr.java_conf.mizu.es.ws.WSFrontend

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project name="onion" default="compile" basedir=".">
+  <property environment="env" />
+  <property name="src" value="src" />
+  <property name="grammar" value="grammar" />
+  <property name="build" value="build" />
+  <property name="parser" value="${src}/jp/gr/java_conf/mizu/es/ws/parser" />
+  <property name="install.path" value="C:/development/ws" />
+  <property name="javacc.home" value="C:/development/javacc-3.2" />
+  <property name="ws_jar_name" value="ws.jar"/>
+
+  <path id="lib">
+    <pathelement path="." />
+  </path>
+  
+  <target name="grammar">
+    <mkdir dir="${parser}" />
+    <javacc 
+    	target="${grammar}/WSParser.jj"
+    	unicodeinput="true" javaunicodeescape="true" 
+    	outputdirectory="${parser}" javacchome="${javacc.home}"/>
+  </target>
+  
+
+  <target name="compile" depends="grammar">
+    <mkdir dir="${build}" />
+    <javac srcdir="${src}" destdir="${build}" source="1.4" debug="true">
+      <classpath>
+        <path refid="lib" />
+      </classpath>
+    </javac>
+  </target>
+
+  <target name="jar" depends="compile">
+    <jar 
+    	destfile="${ws_jar_name}" basedir="${build}" manifest="resources/Manifest.mf"/>
+  </target>
+  
+  <target name="install" depends="jar">
+    <copy todir="${install.path}">
+      <fileset dir=".">
+        <include name="${ws_jar_name}"/>
+      </fileset>
+    </copy>
+  </target>
+
+  <target name="clean">
+    <delete file="${ws_jar_name}" />
+    <delete dir="${build}" />
+    <delete dir="${parser}" />
+  </target>
+</project>
